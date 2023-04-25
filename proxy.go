@@ -12,8 +12,9 @@ type Proxy struct {
 	backend  *net.TCPAddr
 	listener *net.TCPListener
 
-	conns map[*net.TCPConn]bool
-	mu    sync.Mutex
+	conns  map[*net.TCPConn]bool
+	refuse bool
+	mu     sync.Mutex
 }
 
 func NewProxy(t *testing.T, backend *net.TCPAddr) (*Proxy, error) {
@@ -41,10 +42,8 @@ func (p *Proxy) Addr() *net.TCPAddr {
 	return p.listener.Addr().(*net.TCPAddr)
 }
 
-func (p *Proxy) Close() {
-	p.t.Logf("* -> %s -> [proxy] -> * -> %s closing...", p.listener.Addr(), p.backend)
-
-	p.listener.Close()
+func (p *Proxy) CloseAllConns() {
+	p.t.Logf("* -> %s -> [proxy] -> * -> %s closing all connections...", p.listener.Addr(), p.backend)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -54,6 +53,20 @@ func (p *Proxy) Close() {
 	}
 
 	p.conns = map[*net.TCPConn]bool{}
+}
+
+func (p *Proxy) SetRefuse(refuse bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.refuse = true
+}
+
+func (p *Proxy) Close() {
+	p.t.Logf("* -> %s -> [proxy] -> * -> %s closing...", p.listener.Addr(), p.backend)
+
+	p.listener.Close()
+	p.CloseAllConns()
 
 	p.t.Logf("* -> %s -> [proxy] -> * -> %s closed", p.listener.Addr(), p.backend)
 }
@@ -65,7 +78,16 @@ func (p *Proxy) accept() {
 			return
 		}
 
-		go p.dial(frontConn)
+		p.mu.Lock()
+
+		if p.refuse {
+			p.t.Logf("%s -> %s -> [proxy] -> * -> %s refusing...", frontConn.RemoteAddr(), frontConn.LocalAddr(), p.backend)
+			frontConn.Close()
+		} else {
+			go p.dial(frontConn)
+		}
+
+		p.mu.Unlock()
 	}
 }
 
