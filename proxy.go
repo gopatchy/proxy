@@ -43,10 +43,10 @@ func (p *Proxy) Addr() *net.TCPAddr {
 }
 
 func (p *Proxy) CloseAllConns() {
-	p.t.Logf("* -> %s -> [proxy] -> * -> %s closing all connections...", p.listener.Addr(), p.backend)
-
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	p.t.Logf("* -> %s -> [proxy] -> * -> %s closing all connections", p.listener.Addr(), p.backend)
 
 	for conn := range p.conns {
 		conn.Close()
@@ -59,16 +59,35 @@ func (p *Proxy) SetRefuse(refuse bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if refuse {
+		p.t.Logf("* -> %s -> [proxy] -> * -> %s refusing new connections", p.listener.Addr(), p.backend)
+	} else {
+		p.t.Logf("* -> %s -> [proxy] -> * -> %s accepting new connections", p.listener.Addr(), p.backend)
+	}
+
 	p.refuse = true
 }
 
+func (p *Proxy) SetBackend(backend *net.TCPAddr) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.backend = backend
+
+	p.t.Logf("* -> %s -> [proxy] -> * -> %s switched to new backend", p.listener.Addr(), p.backend)
+}
+
 func (p *Proxy) Close() {
+	p.mu.Lock()
 	p.t.Logf("* -> %s -> [proxy] -> * -> %s closing...", p.listener.Addr(), p.backend)
+	p.mu.Unlock()
 
 	p.listener.Close()
 	p.CloseAllConns()
 
+	p.mu.Lock()
 	p.t.Logf("* -> %s -> [proxy] -> * -> %s closed", p.listener.Addr(), p.backend)
+	p.mu.Unlock()
 }
 
 func (p *Proxy) accept() {
@@ -81,7 +100,7 @@ func (p *Proxy) accept() {
 		p.mu.Lock()
 
 		if p.refuse {
-			p.t.Logf("%s -> %s -> [proxy] -> * -> %s refusing...", frontConn.RemoteAddr(), frontConn.LocalAddr(), p.backend)
+			p.t.Logf("%s -> %s -> [proxy] -> * -> %s refused", frontConn.RemoteAddr(), frontConn.LocalAddr(), p.backend)
 			frontConn.Close()
 		} else {
 			go p.dial(frontConn)
