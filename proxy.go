@@ -2,9 +2,12 @@ package proxy
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type Proxy struct {
@@ -17,7 +20,7 @@ type Proxy struct {
 	mu     sync.Mutex
 }
 
-func NewProxy(t *testing.T, backend *net.TCPAddr) (*Proxy, error) {
+func NewProxy(t *testing.T, backend *net.TCPAddr) *Proxy {
 	var err error
 
 	p := &Proxy{
@@ -27,19 +30,25 @@ func NewProxy(t *testing.T, backend *net.TCPAddr) (*Proxy, error) {
 	}
 
 	p.listener, err = net.ListenTCP("tcp", nil)
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	go p.accept()
 
 	t.Logf("* -> %s -> [proxy] -> * -> %s listening...", p.listener.Addr(), p.backend)
 
-	return p, nil
+	return p
 }
 
 func (p *Proxy) Addr() *net.TCPAddr {
 	return p.listener.Addr().(*net.TCPAddr)
+}
+
+func (p *Proxy) HTTP() string {
+	return fmt.Sprintf("http://%s/", p.Addr())
+}
+
+func (p *Proxy) HTTPS() string {
+	return fmt.Sprintf("https://%s/", p.Addr())
 }
 
 func (p *Proxy) CloseAllConns() {
